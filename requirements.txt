@@ -1,0 +1,9 @@
+flask~=3.0.3
+flask_sqlalchemy
+pymysql
+xmltodict~=0.13.0
+beautifulsoup4~=4.12.3
+
+PyJWT~=2.8.0
+requests~=2.32.3
+bs4~=0.0.2
