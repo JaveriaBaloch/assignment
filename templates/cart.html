@@ -1,0 +1,82 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Cart - Coffee Shop{% endblock %}
+
+{% block content %}
+    <div class="container mt-5">
+        <h2>Your Cart</h2>
+        {% if items %}
+            <div class="list-group">
+                {% for item in items %}
+                    <div class="card card-body my-2" data-price="{{ item['price'] }}">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h5>{{ item['name'] }}</h5>
+                                <p class="badge bg-info">{{ item['CategoryName'] }}</p>
+                                <div class="d-flex mb-3">
+                                    <button type="button" class="btn btn-outline-dark decrease-quantity">-</button>
+                                    <input type="number" name="quantity" class="form-control mx-2 quantity-input" value="{{ item['quantity'] }}" min="1" required>
+                                    <button type="button" class="btn btn-outline-success increase-quantity">+</button>
+                                    <input type="hidden" name="item_id" value="{{ item['item_id'] }}">
+                                </div>
+                                <p>Price: $<span class="item-price">{{ item['price'] }}</span></p>
+                            </div>
+                            <div>
+                                <img src="{{ item['image'] }}" alt="{{ item['name'] }}" style="width: 100px;">
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="mt-3">
+                <h4>Total Amount: $<span id="total-amount">0</span></h4>
+                <a class="btn btn-lg btn-primary" href="/checkout">Proceed To checkout</a>
+            </div>
+        {% else %}
+            <p>Your cart is empty.</p>
+        {% endif %}
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const items = document.querySelectorAll('.card[data-price]');
+            const totalAmountElem = document.getElementById('total-amount');
+
+            function updateTotalAmount() {
+                let totalAmount = 0;
+                items.forEach(item => {
+                    const price = parseFloat(item.getAttribute('data-price'));
+                    const quantity = parseInt(item.querySelector('.quantity-input').value, 10);
+                    totalAmount += price * quantity;
+                });
+                totalAmountElem.textContent = totalAmount.toFixed(2);
+            }
+
+            items.forEach(item => {
+                const increaseBtn = item.querySelector('.increase-quantity');
+                const decreaseBtn = item.querySelector('.decrease-quantity');
+                const quantityInput = item.querySelector('.quantity-input');
+
+                increaseBtn.addEventListener('click', function() {
+                    let currentQuantity = parseInt(quantityInput.value);
+                    quantityInput.value = currentQuantity + 1;
+                    updateTotalAmount();
+                });
+
+                decreaseBtn.addEventListener('click', function() {
+                    let currentQuantity = parseInt(quantityInput.value);
+                    if (currentQuantity > 1) {
+                        quantityInput.value = currentQuantity - 1;
+                        updateTotalAmount();
+                    }
+                });
+
+                quantityInput.addEventListener('input', function() {
+                    updateTotalAmount();
+                });
+            });
+
+            // Initial update of total amount
+            updateTotalAmount();
+        });
+    </script>
+{% endblock %}

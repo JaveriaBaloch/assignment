@@ -1,0 +1,16 @@
+body{
+position:relative;
+
+min-height:100vh !important;
+}
+footer{
+margin-top:14rem;
+background:black;
+color:white;
+padding:2rem 0rem 0;
+position:relative;
+bottom:0px;
+left:0px
+}
+footer .row{
+margin: 2rem 0 }

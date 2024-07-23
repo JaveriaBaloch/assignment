@@ -1,32 +1,26 @@
 version: '3.8'
 
 services:
-  flask:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: my_flask_app
+  mysql_db:
+    image: mysql:8.0
     environment:
-      FLASK_APP: app.py
-      FLASK_ENV: development
-      SQLALCHEMY_DATABASE_URI: mysql+pymysql://myuser:mypassword@mysql:3306/mydatabase
-    ports:
-      - "5000:5000"
-    depends_on:
-      - mysql
-    networks:
-      - my_network
-  mysql:
-    image: mysql:latest
-    container_name: my_mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_PASSWORD: examplepassword
       MYSQL_DATABASE: mydatabase
       MYSQL_USER: myuser
       MYSQL_PASSWORD: mypassword
+    volumes:
+      - mysql_data:/var/lib/mysql
     ports:
       - "3306:3306"
-    networks:
-      - my_network
-networks:
-  my_network:
+
+  flask_app:
+    build: .
+    depends_on:
+      - mysql_db
+    ports:
+      - "1234:1234"
+    environment:
+      DATABASE_URL: mysql+pymysql://myuser:mypassword@mysql_db/mydatabase
+
+volumes:
+  mysql_data:

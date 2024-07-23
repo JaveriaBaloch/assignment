@@ -1,23 +1,32 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim
+# Use a base image with Python and essential build tools
+FROM python:3.11-slim
 
-# Set the working directory in the container
+# Set environment variables to avoid buffering issues with Python
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies required by mysqlclient and other build tools
+RUN apt-get update && \
+    apt-get install -y \
+    build-essential \
+    pkg-config \
+    libmariadb-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create and set the working directory
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Copy the requirements file into the container
+COPY requirements.txt /app/
 
-# Upgrade pip to the latest version
-RUN pip install --upgrade pip
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt --verbose
+# Copy the rest of the application code
+COPY . /app/
 
-# Make port 5000 available to the world outside this container
-EXPOSE 5000
+# Ensure gunicorn is installed
+RUN pip install gunicorn
 
-# Define environment variable
-ENV FLASK_APP=app.py
-
-# Run flask when the container launches
-CMD ["flask", "run", "--host=0.0.0.0"]
+# Specify the command to run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:1234", "app:app"]

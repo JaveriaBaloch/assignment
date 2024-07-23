@@ -1,0 +1,55 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Checkout - Coffee Shop{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Checkout</h2>
+    <form action="{{ url_for('place_order') }}" method="post">
+        <div class="list-group mb-3">
+            {% for item in items %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <h5>{{ item['name'] }}</h5>
+                    <p>Price: ${{ item['price'] }}</p>
+                    <p>Quantity: {{ item['quantity'] }}</p>
+                    <p>Total: ${{ item['total'] }}</p>
+                </div>
+                <img src="{{ item['image'] }}" alt="{{ item['name'] }}" style="width: 100px;">
+            </div>
+            {% endfor %}
+        </div>
+        <div class="mb-3">
+            <h4>Total Amount: ${{ total_amount }}</h4>
+        </div>
+        <div class="mb-3">
+            <h5>Address Information</h5>
+            <div class="mb-2">
+                <label for="house" class="form-label">House</label>
+                <input type="text" id="house" name="house" class="form-control" required>
+            </div>
+            <div class="mb-2">
+                <label for="street" class="form-label">Street</label>
+                <input type="text" id="street" name="street" class="form-control" required>
+            </div>
+            <div class="mb-2">
+                <label for="city" class="form-label">City</label>
+                <input type="text" id="city" name="city" class="form-control" required>
+            </div>
+            <div class="mb-2">
+                <label for="postal_code" class="form-label">Postal Code</label>
+                <input type="text" id="postal_code" name="postal_code" class="form-control" required>
+            </div>
+            <div class="mb-2">
+                <label for="state" class="form-label">State</label>
+                <input type="text" id="state" name="state" class="form-control" required>
+            </div>
+            <div class="mb-2">
+                <label for="country" class="form-label">Country</label>
+                <input type="text" id="country" name="country" class="form-control" required>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Place Order</button>
+    </form>
+</div>
+{% endblock %}
