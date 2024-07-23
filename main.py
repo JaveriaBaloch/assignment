@@ -1,5 +1,6 @@
 import os
 from flask import Flask, render_template, abort, request, jsonify, redirect, url_for, session
+from flask_bcrypt import Bcrypt
 from flask_mysqldb import MySQL
 from utils.format_price import format_price
 import logging
@@ -12,6 +13,7 @@ app.config['MYSQL_DB'] = 'shop'
 app.secret_key = os.urandom(24)
 
 mysql = MySQL(app)
+bcrypt = Bcrypt(app)
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -29,7 +31,8 @@ def signup():
     if not username or not email or not password:
         return jsonify({'message': 'Username, email, and password are required'}), 400
 
-    plaintext_password = password
+    # Hash the password
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
     cur = mysql.connection.cursor()
     try:
@@ -39,7 +42,7 @@ def signup():
             return jsonify({'message': 'User with this email already exists'}), 400
 
         cur.execute('INSERT INTO users (username, email, password) VALUES (%s, %s, %s)',
-                    (username, email, plaintext_password))
+                    (username, email, hashed_password))
         mysql.connection.commit()
         return jsonify({'message': 'User registered successfully', 'redirect': url_for('index')}), 201
     except Exception as e:
@@ -63,9 +66,9 @@ def login():
         logging.debug(f'Fetched user: {user}')
 
         if user:
-            stored_password = user[2]  # Assuming password is in the third column
-            logging.debug(f'Comparing provided password "{password}" with stored password "{stored_password}"')
-            if stored_password == password:
+            stored_password = user[2]  # Assuming password hash is in the third column
+            logging.debug(f'Verifying provided password against stored hash')
+            if bcrypt.check_password_hash(stored_password, password):
                 session['user_id'] = user[0]
                 return jsonify({'message': 'Login successful', 'redirect': url_for('index')}), 200
             else:
