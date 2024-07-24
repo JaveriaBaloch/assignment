@@ -5,20 +5,27 @@ from flask_mysqldb import MySQL
 import logging
 
 app = Flask(__name__)
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'myuser'
-app.config['MYSQL_PASSWORD'] = 'mypassword'
-app.config['MYSQL_DB'] = 'shop'
+
+# Configuration
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'myuser')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', 'mypassword')
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'shop')
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.secret_key = os.urandom(24)
 
+# Initialize extensions
 mysql = MySQL(app)
 bcrypt = Bcrypt(app)
 
+# Set up logging
 logging.basicConfig(level=logging.DEBUG)
 
 @app.route('/log-up')
 def logup():
     return render_template('signup.html')
+
 
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -30,7 +37,6 @@ def signup():
     if not username or not email or not password:
         return jsonify({'message': 'Username, email, and password are required'}), 400
 
-    # Hash the password
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
     cur = mysql.connection.cursor()
@@ -43,11 +49,19 @@ def signup():
         cur.execute('INSERT INTO users (username, email, password) VALUES (%s, %s, %s)',
                     (username, email, hashed_password))
         mysql.connection.commit()
-        return jsonify({'message': 'User registered successfully', 'redirect': url_for('index')}), 201
+
+        # Fetch the newly created user to get user_id
+        cur.execute('SELECT * FROM users WHERE email = %s', (email,))
+        new_user = cur.fetchone()
+        session['user_id'] = new_user[0]  # Set session user_id to newly created user_id
+
+        return jsonify({'message': 'User registered and logged in successfully', 'redirect': url_for('index')}), 201
     except Exception as e:
+        app.logger.error(f'Error during signup for email {email}: {str(e)}')
         return jsonify({'message': f'Error: {str(e)}'}), 500
     finally:
         cur.close()
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -62,22 +76,17 @@ def login():
     try:
         cur.execute('SELECT * FROM users WHERE email = %s', (email,))
         user = cur.fetchone()
-        logging.debug(f'Fetched user: {user}')
-
         if user:
-            stored_password = user[2]  # Assuming password hash is in the third column
-            logging.debug(f'Verifying provided password against stored hash')
+            stored_password = user[2]
             if bcrypt.check_password_hash(stored_password, password):
                 session['user_id'] = user[0]
                 return jsonify({'message': 'Login successful', 'redirect': url_for('index')}), 200
             else:
-                logging.debug('Password mismatch')
                 return jsonify({'message': 'Invalid email or password'}), 401
         else:
-            logging.debug('User not found')
             return jsonify({'message': 'Invalid email or password'}), 401
     except Exception as e:
-        logging.error(f'Error during login: {str(e)}')
+        app.logger.error(f'Error during login for email {email}: {str(e)}')
         return jsonify({'message': f'Error: {str(e)}'}), 500
     finally:
         cur.close()
@@ -158,7 +167,7 @@ def cart():
             cart_items_list.append(item)
         return render_template('cart.html', items=cart_items_list)
     except Exception as e:
-        app.logger.error(f'Error retrieving cart: {str(e)}')  # Log the error for debugging
+        app.logger.error(f'Error retrieving cart: {str(e)}')
         return jsonify({'message': f'Error: {str(e)}'}), 500
     finally:
         cur.close()
@@ -166,35 +175,32 @@ def cart():
 @app.route('/add_to_cart', methods=['POST'])
 def add_to_cart():
     if 'user_id' not in session:
-        return redirect(url_for('signin'))  # Redirect to login if not logged in
+        return redirect(url_for('signin'))
 
     user_id = session['user_id']
     item_id = request.form.get('item_id')
-    quantity = int(request.form.get('quantity', 1))  # Default to 1 if not provided
+    quantity = int(request.form.get('quantity', 1))
 
     cur = mysql.connection.cursor()
     try:
-        # Check if item already exists in cart
         cur.execute('''
             SELECT * FROM cart WHERE user_id = %s AND item_id = %s
         ''', (user_id, item_id))
         existing_item = cur.fetchone()
 
         if existing_item:
-            # Update quantity if item already in cart
             cur.execute('''
                 UPDATE cart SET quantity = %s WHERE user_id = %s AND item_id = %s
             ''', (quantity, user_id, item_id))
         else:
-            # Add new item to cart
             cur.execute('''
                 INSERT INTO cart (user_id, item_id, quantity) VALUES (%s, %s, %s)
             ''', (user_id, item_id, quantity))
 
         mysql.connection.commit()
-        return redirect(url_for('cart'))  # Redirect to cart page after adding
+        return redirect(url_for('cart'))
     except Exception as e:
-        app.logger.error(f'Error adding to cart: {str(e)}')  # Log the error for debugging
+        app.logger.error(f'Error adding to cart: {str(e)}')
         return jsonify({'message': f'Error: {str(e)}'}), 500
     finally:
         cur.close()
@@ -228,7 +234,7 @@ def checkout():
             total_amount += item['total']
             cart_items_list.append(item)
 
-        total_amount = round(total_amount, 2)  # Ensure total amount is rounded to 2 decimal places
+        total_amount = round(total_amount, 2)
         cur.close()
         return render_template('checkout.html', items=cart_items_list, total_amount=total_amount)
     except Exception as e:
@@ -252,7 +258,6 @@ def place_order():
 
     cur = mysql.connection.cursor()
     try:
-        # Fetch cart items
         cur.execute('''
             SELECT cart.item_id, cart.quantity, coffee_items.price 
             FROM cart 
@@ -261,118 +266,68 @@ def place_order():
         ''', (user_id,))
         cart_items = cur.fetchall()
 
-        # Log the cart_items to debug
-        app.logger.debug(f'Cart items fetched: {cart_items}')
+        if not cart_items:
+            return jsonify({'message': 'Cart is empty'}), 400
 
-        # Convert cart_items to a list if necessary
-        if isinstance(cart_items, tuple):
-            cart_items = list(cart_items)
+        total_amount = 0
+        for item in cart_items:
+            total_amount += float(item[2]) * int(item[1])
 
-        # Ensure cart_items is iterable
-        if not isinstance(cart_items, list):
-            raise ValueError('Expected cart_items to be a list of tuples.')
+        total_amount = round(total_amount, 2)
 
-        # Calculate total amount
-        total_amount = sum(float(item[2]) * item[1] for item in cart_items)
-
-        # Insert the order
         cur.execute('''
             INSERT INTO orders (user_id, total_amount, house, street, city, postal_code, state, country)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, total_amount, house, street, city, postal_code, state, country))
         order_id = cur.lastrowid
 
-        # Insert items into order_items
         for item in cart_items:
-            item_id = item[0]
-            quantity = item[1]
-            price = float(item[2])
-
             cur.execute('''
                 INSERT INTO order_items (order_id, item_id, quantity, price)
                 VALUES (%s, %s, %s, %s)
-            ''', (order_id, item_id, quantity, price))
+            ''', (order_id, item[0], item[1], item[2]))
 
-        # Clear the cart
         cur.execute('DELETE FROM cart WHERE user_id = %s', (user_id,))
-
         mysql.connection.commit()
-        return redirect(url_for('orders'))
-
+        return jsonify({'message': 'Order placed successfully', 'redirect': url_for('index')}), 200
     except Exception as e:
-        app.logger.error(f'Error during checkout: {str(e)}')
+        app.logger.error(f'Error placing order: {str(e)}')
         return jsonify({'message': f'Error: {str(e)}'}), 500
     finally:
         cur.close()
 
-@app.route('/orders')
-def orders():
-    if 'user_id' not in session:
-        return redirect(url_for('signin'))
-
-    user_id = session['user_id']
+@app.route('/search', methods=['GET'])
+def search():
+    query = request.args.get('query', '')
     cur = mysql.connection.cursor()
     try:
-        # Fetch user orders
-        cur.execute('SELECT * FROM orders WHERE user_id = %s ORDER BY order_date DESC', (user_id,))
-        orders_list = cur.fetchall()
+        cur.execute('''
+            SELECT * FROM coffee_items 
+            WHERE name LIKE %s OR description LIKE %s
+        ''', (f'%{query}%', f'%{query}%'))
+        results = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
 
-        if not orders_list:
-            app.logger.debug('No orders found for the user.')
-            return render_template('orders.html', orders=[])
+        items = []
+        for row in results:
+            item = dict(zip(columns, row))
+            item['price'] = round(float(item['price']), 2)
+            items.append(item)
 
-        order_columns = [desc[0] for desc in cur.description]
-        app.logger.debug(f'Order columns: {order_columns}')
-
-        order_data = []
-        for order in orders_list:
-            order_dict = dict(zip(order_columns, order))
-            app.logger.debug(f'Processing order: {order_dict}')
-
-            # Fetch items for each order
-            cur.execute('''
-                SELECT oi.*, ci.name, ci.image 
-                FROM order_items oi 
-                JOIN coffee_items ci ON oi.item_id = ci.entity_id 
-                WHERE oi.order_id = %s
-            ''', (order_dict['order_id'],))
-            order_items = cur.fetchall()
-
-            item_columns = [desc[0] for desc in cur.description]
-            app.logger.debug(f'Item columns: {item_columns}')
-
-            order_items_dict = [dict(zip(item_columns, item)) for item in order_items]
-            order_data.append({'order': order_dict, 'items': order_items_dict})
-
-        return render_template('orders.html', orders=order_data)
+        return render_template('search_results.html', items=items, query=query)
     except Exception as e:
-        app.logger.error(f'Error retrieving orders: {str(e)}')
+        app.logger.error(f'Error during search: {str(e)}')
         return jsonify({'message': f'Error: {str(e)}'}), 500
     finally:
         cur.close()
 
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
 
-@app.route('/search')
-def search():
-    query = request.args.get('query')
-    if not query:
-        return redirect(url_for('index'))
-
-    cur = mysql.connection.cursor()
-    cur.execute('''
-        SELECT * FROM coffee_items 
-        WHERE name LIKE %s OR description LIKE %s OR CategoryName LIKE %s
-    ''', (f'%{query}%', f'%{query}%', f'%{query}%'))
-    rows = cur.fetchall()
-    columns = [desc[0] for desc in cur.description]
-
-    search_results = []
-    for row in rows:
-        item = dict(zip(columns, row))
-        item['price'] = round(float(item['price']), 2)
-        search_results.append(item)
-
-    return render_template('search_results.html', items=search_results)
+@app.errorhandler(500)
+def internal_server_error(e):
+    return render_template('500.html'), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
